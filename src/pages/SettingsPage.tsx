@@ -1,17 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { User, Trash2, BarChart3 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SettingsPage() {
-  const user = JSON.parse(localStorage.getItem("clipforge_user") || '{"name":"User","email":"user@example.com"}');
-  const [name, setName] = useState(user.name);
-  const [email, setEmail] = useState(user.email);
+  const { user, profile } = useAuth();
+  const { toast } = useToast();
+  const [name, setName] = useState(profile?.name || "");
+  const [clipCount, setClipCount] = useState(0);
 
-  const handleSave = () => {
-    localStorage.setItem("clipforge_user", JSON.stringify({ name, email }));
+  useEffect(() => {
+    if (profile?.name) setName(profile.name);
+  }, [profile]);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("clips").select("id", { count: "exact", head: true }).eq("user_id", user.id).then(({ count }) => {
+      setClipCount(count || 0);
+    });
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user) return;
+    const { error } = await supabase.from("profiles").update({ name }).eq("id", user.id);
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Profile updated!" });
+    }
   };
 
   return (
@@ -21,7 +42,6 @@ export default function SettingsPage() {
         <p className="text-sm text-muted-foreground mt-1">Manage your profile and preferences.</p>
       </motion.div>
 
-      {/* Profile */}
       <motion.div className="glass-card rounded-xl p-5 space-y-4" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
@@ -36,13 +56,12 @@ export default function SettingsPage() {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Email</Label>
-            <Input value={email} onChange={e => setEmail(e.target.value)} className="mt-1 bg-secondary border-border" />
+            <Input value={user?.email || ""} disabled className="mt-1 bg-secondary border-border opacity-60" />
           </div>
           <Button variant="hero" size="sm" onClick={handleSave}>Save Changes</Button>
         </div>
       </motion.div>
 
-      {/* Usage */}
       <motion.div className="glass-card rounded-xl p-5" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
@@ -52,21 +71,20 @@ export default function SettingsPage() {
         </div>
         <div className="grid grid-cols-3 gap-4 text-center">
           <div className="bg-secondary rounded-lg p-3">
-            <p className="text-xl font-bold text-foreground">24</p>
+            <p className="text-xl font-bold text-foreground">{clipCount}</p>
             <p className="text-xs text-muted-foreground">Clips Created</p>
           </div>
           <div className="bg-secondary rounded-lg p-3">
-            <p className="text-xl font-bold text-foreground">156</p>
+            <p className="text-xl font-bold text-foreground">0</p>
             <p className="text-xs text-muted-foreground">Downloads</p>
           </div>
           <div className="bg-secondary rounded-lg p-3">
-            <p className="text-xl font-bold text-foreground">12 min</p>
+            <p className="text-xl font-bold text-foreground">—</p>
             <p className="text-xs text-muted-foreground">Total Duration</p>
           </div>
         </div>
       </motion.div>
 
-      {/* Danger */}
       <motion.div className="glass-card rounded-xl p-5 border-destructive/20" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center">

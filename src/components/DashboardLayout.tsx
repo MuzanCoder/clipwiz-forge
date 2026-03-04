@@ -1,8 +1,9 @@
 import { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Play, LayoutDashboard, Scissors, Film, TrendingUp, Settings, LogOut, Menu, X } from "lucide-react";
+import { Play, LayoutDashboard, Scissors, Film, TrendingUp, Settings, LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
   { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
@@ -15,21 +16,18 @@ const navItems = [
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { profile, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem("clipforge_user");
+  const handleLogout = async () => {
+    await signOut();
     navigate("/");
   };
 
-  const user = JSON.parse(localStorage.getItem("clipforge_user") || '{"name":"User"}');
-
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Mobile overlay */}
       {sidebarOpen && <div className="fixed inset-0 bg-background/80 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
-      {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-card border-r border-border flex flex-col transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         <div className="flex items-center gap-2 px-5 py-5 border-b border-border">
           <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
@@ -58,7 +56,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="px-3 pb-4">
           <div className="glass-card rounded-lg p-3 mb-3">
             <p className="text-xs text-muted-foreground">Signed in as</p>
-            <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+            <p className="text-sm font-medium text-foreground truncate">{profile?.name || "User"}</p>
           </div>
           <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-full transition-colors">
             <LogOut className="w-4 h-4" />
@@ -67,7 +65,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 border-b border-border flex items-center px-4 lg:px-6 gap-3">
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>

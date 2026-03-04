@@ -5,17 +5,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { Play, ArrowRight } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock login
-    localStorage.setItem("clipforge_user", JSON.stringify({ email, name: email.split("@")[0] }));
-    navigate("/dashboard");
+    setLoading(true);
+    const { error } = await signIn(email, password);
+    setLoading(false);
+    if (error) {
+      toast({ title: "Login failed", description: error.message, variant: "destructive" });
+    } else {
+      navigate("/dashboard");
+    }
   };
 
   return (
@@ -47,8 +57,8 @@ export default function LoginPage() {
             <Label htmlFor="password" className="text-muted-foreground text-xs">Password</Label>
             <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} required className="mt-1 bg-secondary border-border" placeholder="••••••••" />
           </div>
-          <Button variant="hero" size="lg" className="w-full" type="submit">
-            Sign In <ArrowRight className="w-4 h-4" />
+          <Button variant="hero" size="lg" className="w-full" type="submit" disabled={loading}>
+            {loading ? "Signing in..." : "Sign In"} <ArrowRight className="w-4 h-4" />
           </Button>
         </form>
 
