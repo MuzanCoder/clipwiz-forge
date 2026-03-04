@@ -6,7 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const COBALT_API = "https://api.cobalt.tools";
+// Use a public cobalt instance that doesn't require auth
+const COBALT_API = "https://cobalt-api.meowing.de";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
