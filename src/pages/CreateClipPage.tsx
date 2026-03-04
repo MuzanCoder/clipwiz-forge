@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Search, Play, Scissors, Download, Loader2, Gamepad2, Smartphone, Film } from "lucide-react";
+import { Search, Play, Scissors, Download, Loader2, Gamepad2, Smartphone, Film, ExternalLink } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -30,9 +30,6 @@ export default function CreateClipPage() {
   const [endTime, setEndTime] = useState(60);
   const [gamingMode, setGamingMode] = useState(false);
   const [shortsMode, setShortsMode] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [clipFilename, setClipFilename] = useState("clip");
-  const [error, setError] = useState<string | null>(null);
 
   const handleFetch = () => {
     if (!url.trim()) return;
@@ -40,59 +37,48 @@ export default function CreateClipPage() {
   };
 
   const handleGenerate = async () => {
-    if (!session?.access_token) {
+    if (!user) {
       toast({ title: "Please log in first", variant: "destructive" });
       return;
     }
 
     setPhase("processing");
-    setError(null);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("process-clip", {
-        body: {
-          url,
-          quality: selectedQuality,
-          title: `Clip from ${new URL(url).hostname}`,
-          startTime,
-          endTime,
-          isPublic: false,
-          shortsMode,
-          gamingMode,
-        },
+      // Save clip metadata to the database
+      const duration = endTime - startTime;
+      const { error: dbError } = await supabase.from("clips").insert({
+        user_id: user.id,
+        source_url: url,
+        title: `Clip from ${new URL(url).hostname}`,
+        quality: selectedQuality,
+        start_time: startTime,
+        end_time: endTime,
+        duration,
+        is_public: false,
       });
 
-      if (fnError) throw new Error(fnError.message);
-      if (data?.error) throw new Error(data.error);
+      if (dbError) throw new Error(dbError.message);
 
-      setDownloadUrl(data.downloadUrl);
-      setClipFilename(data.filename || "clip");
+      // Short delay for UX
+      await new Promise((r) => setTimeout(r, 1500));
       setPhase("done");
     } catch (err: any) {
-      console.error("Process clip error:", err);
-      setError(err.message || "Something went wrong");
+      console.error("Save clip error:", err);
       setPhase("preview");
-      toast({ title: "Failed to process clip", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to save clip", description: err.message, variant: "destructive" });
     }
   };
 
-  const handleDownload = () => {
-    if (!downloadUrl) return;
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.download = clipFilename;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  const handleDownloadViaCobalt = () => {
+    // Open cobalt.tools with the URL pre-filled
+    const cobaltUrl = `https://cobalt.tools/#${encodeURIComponent(url)}`;
+    window.open(cobaltUrl, "_blank", "noopener,noreferrer");
   };
 
   const handleReset = () => {
     setPhase("input");
     setUrl("");
-    setDownloadUrl(null);
-    setError(null);
   };
 
   return (
@@ -121,14 +107,11 @@ export default function CreateClipPage() {
             <Button variant="outline" onClick={handleReset}>Reset</Button>
           )}
         </div>
-        {error && <p className="text-sm text-destructive mt-2">{error}</p>}
       </motion.div>
 
       <AnimatePresence mode="wait">
-        {/* Preview phase */}
         {phase === "preview" && (
           <motion.div key="preview" className="space-y-5" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}>
-            {/* Video info */}
             <div className="glass-card rounded-xl p-5">
               <div className="flex gap-4">
                 <div className="w-40 h-24 rounded-lg bg-secondary flex items-center justify-center shrink-0">
@@ -141,7 +124,6 @@ export default function CreateClipPage() {
               </div>
             </div>
 
-            {/* Timeline */}
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
                 <Scissors className="w-4 h-4 text-primary" /> Clip Editor
@@ -172,7 +154,6 @@ export default function CreateClipPage() {
               </div>
             </div>
 
-            {/* Options */}
             <div className="glass-card rounded-xl p-5 space-y-4">
               <h3 className="text-sm font-semibold text-foreground mb-2">Export Options</h3>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -213,39 +194,36 @@ export default function CreateClipPage() {
           </motion.div>
         )}
 
-        {/* Processing */}
         {phase === "processing" && (
           <motion.div key="processing" className="glass-card rounded-xl p-12 text-center" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
             <Loader2 className="w-10 h-10 text-primary animate-spin mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-foreground mb-2">Processing your clip...</h3>
-            <p className="text-sm text-muted-foreground">Downloading from YouTube via Cobalt...</p>
-            <div className="mt-6 h-2 bg-secondary rounded-full overflow-hidden max-w-xs mx-auto">
-              <motion.div
-                className="h-full bg-primary rounded-full"
-                initial={{ width: "0%" }}
-                animate={{ width: "90%" }}
-                transition={{ duration: 8, ease: "easeOut" }}
-              />
-            </div>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Saving your clip...</h3>
+            <p className="text-sm text-muted-foreground">This will just take a moment.</p>
           </motion.div>
         )}
 
-        {/* Done */}
         {phase === "done" && (
           <motion.div key="done" className="glass-card rounded-xl p-8 text-center" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
             <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
               <Film className="w-7 h-7 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Your clip is ready! 🎉</h3>
-            <p className="text-sm text-muted-foreground mb-6">Quality: {selectedQuality} • Duration: {endTime - startTime}s {shortsMode && "• Shorts"} {gamingMode && "• Gaming Mode"}</p>
-            <div className="flex gap-3 justify-center">
-              <Button variant="hero" size="lg" onClick={handleDownload}>
-                <Download className="w-4 h-4" /> Download Clip
+            <h3 className="text-lg font-semibold text-foreground mb-2">Clip saved! 🎉</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Quality: {selectedQuality} • Duration: {endTime - startTime}s
+              {shortsMode && " • Shorts"} {gamingMode && " • Gaming Mode"}
+            </p>
+            <div className="flex gap-3 justify-center flex-wrap">
+              <Button variant="hero" size="lg" onClick={handleDownloadViaCobalt}>
+                <Download className="w-4 h-4" /> Download via Cobalt
+                <ExternalLink className="w-3 h-3 ml-1" />
               </Button>
               <Button variant="outline" size="lg" onClick={handleReset}>
                 Create Another
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              Opens cobalt.tools where you can download the video directly.
+            </p>
           </motion.div>
         )}
       </AnimatePresence>
