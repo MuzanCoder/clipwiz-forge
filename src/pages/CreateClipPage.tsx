@@ -5,6 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Search, Play, Scissors, Download, Loader2, Gamepad2, Smartphone, Film } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 type Phase = "input" | "preview" | "processing" | "done";
 
@@ -18,6 +21,8 @@ const qualities = [
 ];
 
 export default function CreateClipPage() {
+  const { user, session } = useAuth();
+  const { toast } = useToast();
   const [url, setUrl] = useState("");
   const [phase, setPhase] = useState<Phase>("input");
   const [selectedQuality, setSelectedQuality] = useState("720p");
@@ -25,20 +30,69 @@ export default function CreateClipPage() {
   const [endTime, setEndTime] = useState(60);
   const [gamingMode, setGamingMode] = useState(false);
   const [shortsMode, setShortsMode] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [clipFilename, setClipFilename] = useState("clip");
+  const [error, setError] = useState<string | null>(null);
 
   const handleFetch = () => {
     if (!url.trim()) return;
     setPhase("preview");
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
+    if (!session?.access_token) {
+      toast({ title: "Please log in first", variant: "destructive" });
+      return;
+    }
+
     setPhase("processing");
-    setTimeout(() => setPhase("done"), 3000);
+    setError(null);
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("process-clip", {
+        body: {
+          url,
+          quality: selectedQuality,
+          title: `Clip from ${new URL(url).hostname}`,
+          startTime,
+          endTime,
+          isPublic: false,
+          shortsMode,
+          gamingMode,
+        },
+      });
+
+      if (fnError) throw new Error(fnError.message);
+      if (data?.error) throw new Error(data.error);
+
+      setDownloadUrl(data.downloadUrl);
+      setClipFilename(data.filename || "clip");
+      setPhase("done");
+    } catch (err: any) {
+      console.error("Process clip error:", err);
+      setError(err.message || "Something went wrong");
+      setPhase("preview");
+      toast({ title: "Failed to process clip", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleDownload = () => {
+    if (!downloadUrl) return;
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = clipFilename;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleReset = () => {
     setPhase("input");
     setUrl("");
+    setDownloadUrl(null);
+    setError(null);
   };
 
   return (
@@ -67,6 +121,7 @@ export default function CreateClipPage() {
             <Button variant="outline" onClick={handleReset}>Reset</Button>
           )}
         </div>
+        {error && <p className="text-sm text-destructive mt-2">{error}</p>}
       </motion.div>
 
       <AnimatePresence mode="wait">
@@ -80,9 +135,8 @@ export default function CreateClipPage() {
                   <Play className="w-8 h-8 text-muted-foreground" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground">Amazing YouTube Video Title</h3>
-                  <p className="text-sm text-muted-foreground mt-1">Channel Name • 1.2M views</p>
-                  <p className="text-xs text-muted-foreground mt-2">Duration: 5:30</p>
+                  <h3 className="font-semibold text-foreground truncate max-w-md">{url}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">Ready to process</p>
                 </div>
               </div>
             </div>
@@ -98,7 +152,6 @@ export default function CreateClipPage() {
                     className="absolute top-0 bottom-0 bg-primary/20 border-l-2 border-r-2 border-primary rounded"
                     style={{ left: `${(startTime / 330) * 100}%`, width: `${((endTime - startTime) / 330) * 100}%` }}
                   />
-                  {/* Waveform decoration */}
                   <div className="absolute inset-0 flex items-center justify-center gap-0.5 px-2">
                     {Array.from({ length: 80 }).map((_, i) => (
                       <div key={i} className="w-0.5 bg-muted-foreground/30 rounded-full" style={{ height: `${Math.random() * 60 + 20}%` }} />
@@ -122,8 +175,6 @@ export default function CreateClipPage() {
             {/* Options */}
             <div className="glass-card rounded-xl p-5 space-y-4">
               <h3 className="text-sm font-semibold text-foreground mb-2">Export Options</h3>
-
-              {/* Quality */}
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                 {qualities.map(q => (
                   <button
@@ -136,8 +187,6 @@ export default function CreateClipPage() {
                   </button>
                 ))}
               </div>
-
-              {/* Toggles */}
               <div className="flex flex-col sm:flex-row gap-4 pt-2">
                 <div className="flex items-center gap-3 glass-card rounded-lg px-4 py-3 flex-1">
                   <Smartphone className="w-4 h-4 text-primary" />
@@ -169,13 +218,13 @@ export default function CreateClipPage() {
           <motion.div key="processing" className="glass-card rounded-xl p-12 text-center" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
             <Loader2 className="w-10 h-10 text-primary animate-spin mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-foreground mb-2">Processing your clip...</h3>
-            <p className="text-sm text-muted-foreground">This usually takes a few seconds.</p>
+            <p className="text-sm text-muted-foreground">Downloading from YouTube via Cobalt...</p>
             <div className="mt-6 h-2 bg-secondary rounded-full overflow-hidden max-w-xs mx-auto">
               <motion.div
                 className="h-full bg-primary rounded-full"
                 initial={{ width: "0%" }}
-                animate={{ width: "100%" }}
-                transition={{ duration: 2.8, ease: "easeInOut" }}
+                animate={{ width: "90%" }}
+                transition={{ duration: 8, ease: "easeOut" }}
               />
             </div>
           </motion.div>
@@ -190,7 +239,7 @@ export default function CreateClipPage() {
             <h3 className="text-lg font-semibold text-foreground mb-2">Your clip is ready! 🎉</h3>
             <p className="text-sm text-muted-foreground mb-6">Quality: {selectedQuality} • Duration: {endTime - startTime}s {shortsMode && "• Shorts"} {gamingMode && "• Gaming Mode"}</p>
             <div className="flex gap-3 justify-center">
-              <Button variant="hero" size="lg">
+              <Button variant="hero" size="lg" onClick={handleDownload}>
                 <Download className="w-4 h-4" /> Download Clip
               </Button>
               <Button variant="outline" size="lg" onClick={handleReset}>

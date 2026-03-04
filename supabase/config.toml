@@ -1,1 +1,4 @@
 project_id = "lhjjbmvkcpdafqagecqe"
+
+[functions.process-clip]
+verify_jwt = false
