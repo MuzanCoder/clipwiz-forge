@@ -5,17 +5,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { Play, ArrowRight } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SignupPage() {
   const navigate = useNavigate();
+  const { signUp } = useAuth();
+  const { toast } = useToast();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem("clipforge_user", JSON.stringify({ email, name }));
-    navigate("/dashboard");
+    setLoading(true);
+    const { error } = await signUp(email, password, name);
+    setLoading(false);
+    if (error) {
+      toast({ title: "Signup failed", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Account created!", description: "Check your email to confirm your account, or sign in now." });
+      navigate("/dashboard");
+    }
   };
 
   return (
@@ -49,10 +61,10 @@ export default function SignupPage() {
           </div>
           <div>
             <Label htmlFor="password" className="text-muted-foreground text-xs">Password</Label>
-            <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} required className="mt-1 bg-secondary border-border" placeholder="••••••••" />
+            <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} className="mt-1 bg-secondary border-border" placeholder="••••••••" />
           </div>
-          <Button variant="hero" size="lg" className="w-full" type="submit">
-            Create Account <ArrowRight className="w-4 h-4" />
+          <Button variant="hero" size="lg" className="w-full" type="submit" disabled={loading}>
+            {loading ? "Creating..." : "Create Account"} <ArrowRight className="w-4 h-4" />
           </Button>
         </form>
 
