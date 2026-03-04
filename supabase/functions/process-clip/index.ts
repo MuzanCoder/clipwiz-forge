@@ -6,8 +6,79 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Use a public cobalt instance that doesn't require auth
-const COBALT_API = "https://cobalt-api.meowing.de";
+// Cobalt v11 instances (require POST / with JSON body)
+const COBALT_V11_INSTANCES = [
+  "https://cobalt-backend.canine.tools",
+  "https://cobalt-api.meowing.de",
+  "https://capi.3kh0.net",
+];
+
+// Cobalt v7 instance (uses POST /api/json with different body format)
+const COBALT_V7_INSTANCES = [
+  "https://downloadapi.stuff.solutions",
+];
+
+async function tryCobaltV11(url: string, videoQuality: string, isAudioOnly: boolean): Promise<{ downloadUrl: string; filename: string } | null> {
+  const payload: Record<string, unknown> = {
+    url,
+    videoQuality,
+    ...(isAudioOnly && { downloadMode: "audio", audioFormat: "mp3" }),
+  };
+
+  for (const instance of COBALT_V11_INSTANCES) {
+    try {
+      console.log(`Trying v11 instance: ${instance}`);
+      const res = await fetch(instance, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      console.log(`v11 response from ${instance}:`, JSON.stringify(data).slice(0, 500));
+
+      if (data.status === "tunnel" || data.status === "redirect") {
+        return { downloadUrl: data.url, filename: data.filename || "clip" };
+      }
+      if (data.status === "picker" && data.picker?.length > 0) {
+        return { downloadUrl: data.picker[0].url, filename: "clip" };
+      }
+    } catch (e) {
+      console.error(`v11 instance ${instance} failed:`, e);
+    }
+  }
+  return null;
+}
+
+async function tryCobaltV7(url: string, videoQuality: string, isAudioOnly: boolean): Promise<{ downloadUrl: string; filename: string } | null> {
+  const payload: Record<string, unknown> = {
+    url,
+    vQuality: videoQuality,
+    ...(isAudioOnly && { isAudioOnly: true, aFormat: "mp3" }),
+  };
+
+  for (const instance of COBALT_V7_INSTANCES) {
+    try {
+      console.log(`Trying v7 instance: ${instance}/api/json`);
+      const res = await fetch(`${instance}/api/json`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      console.log(`v7 response from ${instance}:`, JSON.stringify(data).slice(0, 500));
+
+      if (data.status === "stream" || data.status === "redirect") {
+        return { downloadUrl: data.url, filename: data.filename || "clip" };
+      }
+      if (data.status === "picker" && data.picker?.length > 0) {
+        return { downloadUrl: data.picker[0].url, filename: "clip" };
+      }
+    } catch (e) {
+      console.error(`v7 instance ${instance} failed:`, e);
+    }
+  }
+  return null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -50,53 +121,29 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Map quality labels to cobalt videoQuality values
     const qualityMap: Record<string, string> = {
       "1080p": "1080",
       "720p": "720",
       "480p": "480",
       "360p": "360",
       "144p": "144",
-      "MP3": "144", // will use audio mode
+      "MP3": "144",
     };
 
     const isAudioOnly = quality === "MP3";
-    const cobaltPayload: Record<string, unknown> = {
-      url,
-      videoQuality: qualityMap[quality] || "720",
-      ...(isAudioOnly && { downloadMode: "audio", audioFormat: "mp3" }),
-    };
+    const videoQuality = qualityMap[quality] || "720";
 
-    // Call Cobalt API
-    const cobaltRes = await fetch(COBALT_API, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(cobaltPayload),
-    });
-
-    const cobaltData = await cobaltRes.json();
-
-    if (cobaltData.status === "error") {
-      return new Response(
-        JSON.stringify({ error: "Failed to process video", details: cobaltData.error }),
-        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Try v11 instances first, then fall back to v7
+    console.log("Attempting to download video...");
+    let result = await tryCobaltV11(url, videoQuality, isAudioOnly);
+    if (!result) {
+      console.log("All v11 instances failed, trying v7...");
+      result = await tryCobaltV7(url, videoQuality, isAudioOnly);
     }
 
-    // Get download URL from cobalt response
-    let downloadUrl: string | null = null;
-    if (cobaltData.status === "tunnel" || cobaltData.status === "redirect") {
-      downloadUrl = cobaltData.url;
-    } else if (cobaltData.status === "picker" && cobaltData.picker?.length > 0) {
-      downloadUrl = cobaltData.picker[0].url;
-    }
-
-    if (!downloadUrl) {
+    if (!result) {
       return new Response(
-        JSON.stringify({ error: "Could not get download URL from service" }),
+        JSON.stringify({ error: "All download services are currently unavailable. Please try again later." }),
         { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -125,8 +172,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        downloadUrl,
-        filename: cobaltData.filename || "clip",
+        downloadUrl: result.downloadUrl,
+        filename: result.filename,
         clip,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
